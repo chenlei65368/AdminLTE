@@ -10,12 +10,19 @@ const banner = `/*!
 
 export default {
   input: 'src/ts/adminlte.ts',
-  output: {
-    file: 'dist/js/adminlte.js',
-    format: 'umd',
-    banner,
-    name: 'adminlte'
-  },
+  output: [
+    {
+      file: 'dist/js/adminlte.js',
+      format: 'umd',
+      banner,
+      name: 'adminlte'
+    },
+    {
+      file: 'dist/js/adminlte.esm.js',
+      format: 'esm',
+      banner
+    }
+  ],
   plugins: [
     typescript({
       tsconfig: './tsconfig.json',

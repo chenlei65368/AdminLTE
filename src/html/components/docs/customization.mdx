@@ -79,6 +79,13 @@ $border-radius:          .25rem;
 @import "node_modules/admin-lte/src/scss/adminlte";
 ```
 
+> **Note:** compiling the Sass source requires `bootstrap` to be installed —
+> it is a peer dependency of `admin-lte` since 4.1 (npm installs it
+> automatically alongside). Make sure your Sass compiler can resolve bare
+> `bootstrap/...` imports by adding `node_modules` to its load paths, e.g.
+> `sass --load-path=node_modules` or, in Vite,
+> `css: { preprocessorOptions: { scss: { loadPaths: ["node_modules"] } } }`.
+
 ##### Recompiling SCSS
 
 If you cloned the repo, the build pipeline is already wired:
