@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Advanced form pages:** `forms/advanced.html` demonstrates the recommended Tom Select and Flatpickr integrations (searchable single select, tag-style multi-select, option groups loaded on demand; date, date-time, range, and time pickers), and `forms/editors.html` demonstrates Quill 2 in both the snow (toolbar) and bubble (inline) themes. CDN assets are pinned to the versions recommended on the docs Integrations page and carry SRI hashes. Both pages are linked from the sidebar's Forms menu.
+- **Top-nav layout demo:** `layout/top-nav.html` — a sidebar-less page whose primary navigation lives in the app-header as a plain Bootstrap `navbar-expand-lg` (collapse toggler on mobile, no PushMenu). No new CSS was needed: without an `.app-sidebar` in the markup, the `app-wrapper` grid's `auto` sidebar column collapses to zero width on its own.
+
 ## [4.1.0] - 2026-07-02
 
 ### Added

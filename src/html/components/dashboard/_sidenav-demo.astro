@@ -149,7 +149,7 @@ const deploymentPath = depth === 0 ? './' : '../'.repeat(depth);
             <p>
               Layout Options
               <span class="nav-badge badge text-bg-secondary me-3"
-              >7</span
+              >12</span
               >
               <i class="nav-arrow bi bi-chevron-right"></i>
             </p>
@@ -252,6 +252,15 @@ const deploymentPath = depth === 0 ? './' : '../'.repeat(depth);
               >
                 <i class="nav-icon bi bi-circle"></i>
                 <p>Sidebar Mini <small>+ Logo Switch</small></p>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a
+                href={htmlPath + "/layout/top-nav.html"}
+                class:list={["nav-link", page === "top-nav" && "active"]}
+              >
+                <i class="nav-icon bi bi-circle"></i>
+                <p>Top Nav <small>+ No Sidebar</small></p>
               </a>
             </li>
             <li class="nav-item">
@@ -396,6 +405,24 @@ const deploymentPath = depth === 0 ? './' : '../'.repeat(depth);
               >
                 <i class="nav-icon bi bi-circle"></i>
                 <p>Wizard</p>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a
+                href={htmlPath + "/forms/advanced.html"}
+                class:list={["nav-link", page === "advanced" && "active"]}
+              >
+                <i class="nav-icon bi bi-circle"></i>
+                <p>Advanced Elements</p>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a
+                href={htmlPath + "/forms/editors.html"}
+                class:list={["nav-link", page === "editors" && "active"]}
+              >
+                <i class="nav-icon bi bi-circle"></i>
+                <p>Editors</p>
               </a>
             </li>
           </ul>
