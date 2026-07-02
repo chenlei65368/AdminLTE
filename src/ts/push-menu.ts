@@ -6,6 +6,7 @@
  * ----------------------------------------------------------------------------
  */
 
+import { BaseComponent, dispatchCustomEvent } from './base-component'
 import {
   getLifecycleSignal,
   onDOMContentLoaded
@@ -17,10 +18,16 @@ import {
  * ----------------------------------------------------------------------------
  */
 
-const DATA_KEY = 'lte.push-menu'
-const EVENT_KEY = `.${DATA_KEY}`
+const NAME = 'push-menu'
+const EVENT_KEY = `.lte.${NAME}`
+
+// Cancelable "before" events: preventDefault() aborts the state change.
 const EVENT_OPEN = `open${EVENT_KEY}`
 const EVENT_COLLAPSE = `collapse${EVENT_KEY}`
+
+// "After" events, dispatched once the classes have been applied.
+const EVENT_OPENED = `opened${EVENT_KEY}`
+const EVENT_COLLAPSED = `collapsed${EVENT_KEY}`
 
 const CLASS_NAME_SIDEBAR_MINI = 'sidebar-mini'
 const CLASS_NAME_SIDEBAR_EXPAND = 'sidebar-expand'
@@ -68,12 +75,23 @@ const Defaults: Config = {
  * ----------------------------------------------------------------------------
  */
 
-class PushMenu {
-  _element: HTMLElement
+class PushMenu extends BaseComponent {
+  static get NAME(): string {
+    return NAME
+  }
+
+  static getInstance(element: Element | null | undefined): PushMenu | null {
+    return this._getInstance(element) as PushMenu | null
+  }
+
+  static getOrCreateInstance(element: HTMLElement, config: Partial<Config> = {}): PushMenu {
+    return this.getInstance(element) ?? new this(element, config)
+  }
+
   _config: Config
 
-  constructor(element: HTMLElement, config: Config) {
-    this._element = element
+  constructor(element: HTMLElement, config: Partial<Config> = {}) {
+    super(element)
     this._config = { ...Defaults, ...config }
   }
 
@@ -118,6 +136,12 @@ class PushMenu {
    * Expand the sidebar menu.
    */
   expand(): void {
+    // The "open" event is cancelable: preventDefault() keeps the sidebar
+    // in its current state.
+    if (dispatchCustomEvent(this._element, EVENT_OPEN, { cancelable: true }).defaultPrevented) {
+      return
+    }
+
     // Remove the sidebar-collapse class. Only on mobile, add the sidebar-open
     // class to indicate the sidebar is explicitly open.
 
@@ -127,24 +151,24 @@ class PushMenu {
       document.body.classList.add(CLASS_NAME_SIDEBAR_OPEN)
     }
 
-    // Dispatch the expand event.
-
-    this._element.dispatchEvent(new Event(EVENT_OPEN))
+    dispatchCustomEvent(this._element, EVENT_OPENED)
   }
 
   /**
    * Collapse the sidebar menu.
    */
   collapse(): void {
+    if (dispatchCustomEvent(this._element, EVENT_COLLAPSE, { cancelable: true }).defaultPrevented) {
+      return
+    }
+
     // Remove the sidebar-open class (if present), and add the sidebar-collapse
     // class.
 
     document.body.classList.remove(CLASS_NAME_SIDEBAR_OPEN)
     document.body.classList.add(CLASS_NAME_SIDEBAR_COLLAPSE)
 
-    // Dispatch the collapse event.
-
-    this._element.dispatchEvent(new Event(EVENT_COLLAPSE))
+    dispatchCustomEvent(this._element, EVENT_COLLAPSED)
   }
 
   /**
@@ -332,12 +356,40 @@ class PushMenu {
  * ----------------------------------------------------------------------------
  * Data Api implementation
  * ----------------------------------------------------------------------------
+ * Toggle clicks are handled by one delegated listener on `document`, so
+ * toggle buttons added later work and the listener survives Turbo's <body>
+ * swaps. The instance itself is created per page load below and can be
+ * retrieved anywhere with:
+ *
+ *   PushMenu.getInstance(document.querySelector('.app-sidebar'))
  */
+
+document.addEventListener('click', event => {
+  const target = event.target
+
+  if (!(target instanceof Element)) {
+    return
+  }
+
+  const button = target.closest(SELECTOR_SIDEBAR_TOGGLE)
+
+  if (!button) {
+    return
+  }
+
+  event.preventDefault()
+
+  const sidebar = document.querySelector(SELECTOR_APP_SIDEBAR) as HTMLElement | null
+
+  if (sidebar) {
+    PushMenu.getOrCreateInstance(sidebar).toggle()
+  }
+})
 
 onDOMContentLoaded(() => {
   // Find the sidebar element in the DOM.
 
-  const sidebar = document?.querySelector(SELECTOR_APP_SIDEBAR) as HTMLElement | undefined
+  const sidebar = document.querySelector(SELECTOR_APP_SIDEBAR) as HTMLElement | null
 
   if (!sidebar) {
     return
@@ -358,9 +410,11 @@ onDOMContentLoaded(() => {
       enablePersistenceAttr === 'true'
   }
 
-  // Initialize the PushMenu plugin (a unique instance).
+  // Initialize the PushMenu plugin (a unique instance per sidebar element;
+  // Turbo navigations swap in a fresh element, so a fresh instance is
+  // created and the old one is garbage-collected with the old <body>).
 
-  const pushMenu = new PushMenu(sidebar, config)
+  const pushMenu = PushMenu.getOrCreateInstance(sidebar, config)
   pushMenu.init()
 
   // Update the sidebar state only when the viewport crosses the sidebar
@@ -415,27 +469,6 @@ onDOMContentLoaded(() => {
   sidebarOverlay.addEventListener('click', event => {
     event.preventDefault()
     pushMenu.collapse()
-  })
-
-  // Handle click events on sidebar toggle buttons.
-
-  const fullBtn = document.querySelectorAll(SELECTOR_SIDEBAR_TOGGLE)
-
-  fullBtn.forEach(btn => {
-    btn.addEventListener('click', event => {
-      event.preventDefault()
-
-      let button = event.currentTarget as HTMLElement | undefined
-
-      if (button?.dataset.lteToggle !== 'sidebar') {
-        button = button?.closest(SELECTOR_SIDEBAR_TOGGLE) as HTMLElement | undefined
-      }
-
-      if (button) {
-        event?.preventDefault()
-        pushMenu.toggle()
-      }
-    })
   })
 })
 

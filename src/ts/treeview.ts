@@ -6,6 +6,7 @@
  * --------------------------------------------
  */
 
+import { BaseComponent, dispatchCustomEvent } from './base-component'
 import {
   onDOMContentLoaded,
   slideDown,
@@ -18,10 +19,14 @@ import {
  * ------------------------------------------------------------------------
  */
 
-// const NAME = 'Treeview'
-const DATA_KEY = 'lte.treeview'
-const EVENT_KEY = `.${DATA_KEY}`
+const NAME = 'treeview'
+const EVENT_KEY = `.lte.${NAME}`
 
+// Cancelable "before" events (dispatched on the nav-item as an action starts)
+const EVENT_EXPAND = `expand${EVENT_KEY}`
+const EVENT_COLLAPSE = `collapse${EVENT_KEY}`
+
+// "After" events (dispatched on the nav-item when the animation finished)
 const EVENT_EXPANDED = `expanded${EVENT_KEY}`
 const EVENT_COLLAPSED = `collapsed${EVENT_KEY}`
 const EVENT_LOAD_DATA_API = `load${EVENT_KEY}`
@@ -56,17 +61,30 @@ const setAriaExpanded = (navItem: Element, expanded: boolean): void => {
  * ====================================================
  */
 
-class Treeview {
-  _element: HTMLElement
+class Treeview extends BaseComponent {
+  static get NAME(): string {
+    return NAME
+  }
+
+  static getInstance(element: Element | null | undefined): Treeview | null {
+    return this._getInstance(element) as Treeview | null
+  }
+
+  static getOrCreateInstance(element: HTMLElement, config: Partial<Config> = {}): Treeview {
+    return this.getInstance(element) ?? new this(element, config)
+  }
+
   _config: Config
 
-  constructor(element: HTMLElement, config: Config) {
-    this._element = element
+  constructor(element: HTMLElement, config: Partial<Config> = {}) {
+    super(element)
     this._config = { ...Default, ...config }
   }
 
   open(): void {
-    const event = new Event(EVENT_EXPANDED)
+    if (dispatchCustomEvent(this._element, EVENT_EXPAND, { cancelable: true }).defaultPrevented) {
+      return
+    }
 
     if (this._config.accordion) {
       const openMenuList = this._element.parentElement?.querySelectorAll(`${SELECTOR_NAV_ITEM}.${CLASS_NAME_MENU_OPEN}`)
@@ -90,26 +108,36 @@ class Treeview {
     this._element.classList.add(CLASS_NAME_MENU_OPEN)
     setAriaExpanded(this._element, true)
 
-    const childElement = this._element?.querySelector(SELECTOR_TREEVIEW_MENU) as HTMLElement | undefined
+    const childElement = this._element.querySelector(SELECTOR_TREEVIEW_MENU) as HTMLElement | undefined
     if (childElement) {
       slideDown(childElement, this._config.animationSpeed)
     }
 
-    this._element.dispatchEvent(event)
+    setTimeout(() => {
+      if (this._element.classList.contains(CLASS_NAME_MENU_OPEN)) {
+        dispatchCustomEvent(this._element, EVENT_EXPANDED)
+      }
+    }, this._config.animationSpeed)
   }
 
   close(): void {
-    const event = new Event(EVENT_COLLAPSED)
+    if (dispatchCustomEvent(this._element, EVENT_COLLAPSE, { cancelable: true }).defaultPrevented) {
+      return
+    }
 
     this._element.classList.remove(CLASS_NAME_MENU_OPEN)
     setAriaExpanded(this._element, false)
 
-    const childElement = this._element?.querySelector(SELECTOR_TREEVIEW_MENU) as HTMLElement | undefined
+    const childElement = this._element.querySelector(SELECTOR_TREEVIEW_MENU) as HTMLElement | undefined
     if (childElement) {
       slideUp(childElement, this._config.animationSpeed)
     }
 
-    this._element.dispatchEvent(event)
+    setTimeout(() => {
+      if (!this._element.classList.contains(CLASS_NAME_MENU_OPEN)) {
+        dispatchCustomEvent(this._element, EVENT_COLLAPSED)
+      }
+    }, this._config.animationSpeed)
   }
 
   toggle(): void {
@@ -125,7 +153,49 @@ class Treeview {
  * ------------------------------------------------------------------------
  * Data Api implementation
  * ------------------------------------------------------------------------
+ * Clicks are handled by one delegated listener on `document`, so nav items
+ * added after load (dynamic menus, Turbo Frames) work without
+ * re-initialisation. Initial state (pre-opened menus, ARIA stamping) is
+ * applied per page load below.
  */
+
+document.addEventListener('click', event => {
+  const target = event.target
+
+  if (!(target instanceof Element)) {
+    return
+  }
+
+  const toggleRoot = target.closest(SELECTOR_DATA_TOGGLE) as HTMLElement | null
+
+  if (!toggleRoot) {
+    return
+  }
+
+  const targetItem = target.closest(SELECTOR_NAV_ITEM) as HTMLElement | null
+  const targetLink = target.closest(SELECTOR_NAV_LINK)
+
+  // Avoid creating Treeview instances on non menu elements
+  if (!targetItem?.querySelector(SELECTOR_TREEVIEW_MENU)) {
+    return
+  }
+
+  if (target.getAttribute('href') === '#' || targetLink?.getAttribute('href') === '#') {
+    event.preventDefault()
+  }
+
+  // Read config from data attributes on the treeview root, falling back to
+  // Default. The config of the first interaction sticks to the instance.
+  const accordionAttr = toggleRoot.dataset.accordion
+  const animationSpeedAttr = toggleRoot.dataset.animationSpeed
+
+  const config: Config = {
+    accordion: accordionAttr === undefined ? Default.accordion : accordionAttr === 'true',
+    animationSpeed: animationSpeedAttr === undefined ? Default.animationSpeed : Number(animationSpeedAttr)
+  }
+
+  Treeview.getOrCreateInstance(targetItem, config).toggle()
+})
 
 onDOMContentLoaded(() => {
   const openMenuItems = document.querySelectorAll(`${SELECTOR_NAV_ITEM}.${CLASS_NAME_MENU_OPEN}`)
@@ -146,42 +216,6 @@ onDOMContentLoaded(() => {
     root.querySelectorAll(SELECTOR_NAV_ITEM).forEach(item => {
       if (item.querySelector(`:scope > ${SELECTOR_TREEVIEW_MENU}`)) {
         setAriaExpanded(item, item.classList.contains(CLASS_NAME_MENU_OPEN))
-      }
-    })
-  })
-
-  const button = document.querySelectorAll(SELECTOR_DATA_TOGGLE)
-
-  button.forEach(btn => {
-    btn.addEventListener('click', event => {
-      const target = event.target as HTMLElement
-      const targetItem = target.closest(SELECTOR_NAV_ITEM) as HTMLElement | undefined
-      const targetLink = target.closest(SELECTOR_NAV_LINK) as HTMLAnchorElement | undefined
-      const targetTreeviewMenu = targetItem?.querySelector(SELECTOR_TREEVIEW_MENU) as HTMLElement | undefined
-      const lteToggleElement = event.currentTarget as HTMLElement
-
-      // Avoid creating Treeview instances on non menu elements
-      if (!targetTreeviewMenu) {
-        return
-      }
-
-      if (target?.getAttribute('href') === '#' || targetLink?.getAttribute('href') === '#') {
-        event.preventDefault()
-      }
-
-      if (targetItem) {
-        // Read data attributes
-        const accordionAttr = lteToggleElement.dataset.accordion
-        const animationSpeedAttr = lteToggleElement.dataset.animationSpeed
-
-        // Build config from data attributes, fallback to Default
-        const config: Config = {
-          accordion: accordionAttr === undefined ? Default.accordion : accordionAttr === 'true',
-          animationSpeed: animationSpeedAttr === undefined ? Default.animationSpeed : Number(animationSpeedAttr)
-        }
-
-        const data = new Treeview(targetItem, config)
-        data.toggle()
       }
     })
   })

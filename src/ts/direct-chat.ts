@@ -6,17 +6,15 @@
  * --------------------------------------------
  */
 
-import {
-  onDOMContentLoaded
-} from './util/index'
+import { BaseComponent, dispatchCustomEvent } from './base-component'
 
 /**
  * Constants
  * ====================================================
  */
 
-const DATA_KEY = 'lte.direct-chat'
-const EVENT_KEY = `.${DATA_KEY}`
+const NAME = 'direct-chat'
+const EVENT_KEY = `.lte.${NAME}`
 const EVENT_EXPANDED = `expanded${EVENT_KEY}`
 const EVENT_COLLAPSED = `collapsed${EVENT_KEY}`
 
@@ -30,25 +28,26 @@ const CLASS_NAME_DIRECT_CHAT_OPEN = 'direct-chat-contacts-open'
  * ====================================================
  */
 
-class DirectChat {
-  _element: HTMLElement
-  constructor(element: HTMLElement) {
-    this._element = element
+class DirectChat extends BaseComponent {
+  static get NAME(): string {
+    return NAME
+  }
+
+  static getInstance(element: Element | null | undefined): DirectChat | null {
+    return this._getInstance(element) as DirectChat | null
+  }
+
+  static getOrCreateInstance(element: HTMLElement): DirectChat {
+    return this.getInstance(element) ?? new this(element)
   }
 
   toggle(): void {
     if (this._element.classList.contains(CLASS_NAME_DIRECT_CHAT_OPEN)) {
-      const event = new Event(EVENT_COLLAPSED)
-
       this._element.classList.remove(CLASS_NAME_DIRECT_CHAT_OPEN)
-
-      this._element.dispatchEvent(event)
+      dispatchCustomEvent(this._element, EVENT_COLLAPSED)
     } else {
-      const event = new Event(EVENT_EXPANDED)
-
       this._element.classList.add(CLASS_NAME_DIRECT_CHAT_OPEN)
-
-      this._element.dispatchEvent(event)
+      dispatchCustomEvent(this._element, EVENT_EXPANDED)
     }
   }
 }
@@ -57,23 +56,30 @@ class DirectChat {
  *
  * Data Api implementation
  * ====================================================
+ * One delegated listener on `document`: chat panes inserted later work, and
+ * the listener survives Turbo's <body> swaps.
  */
 
-onDOMContentLoaded(() => {
-  const button = document.querySelectorAll(SELECTOR_DATA_TOGGLE)
+document.addEventListener('click', event => {
+  const target = event.target
 
-  button.forEach(btn => {
-    btn.addEventListener('click', event => {
-      event.preventDefault()
-      const target = event.target as HTMLElement
-      const chatPane = target.closest(SELECTOR_DIRECT_CHAT) as HTMLElement | undefined
+  if (!(target instanceof Element)) {
+    return
+  }
 
-      if (chatPane) {
-        const data = new DirectChat(chatPane)
-        data.toggle()
-      }
-    })
-  })
+  const trigger = target.closest(SELECTOR_DATA_TOGGLE)
+
+  if (!trigger) {
+    return
+  }
+
+  event.preventDefault()
+
+  const chatPane = trigger.closest(SELECTOR_DIRECT_CHAT) as HTMLElement | null
+
+  if (chatPane) {
+    DirectChat.getOrCreateInstance(chatPane).toggle()
+  }
 })
 
 export default DirectChat

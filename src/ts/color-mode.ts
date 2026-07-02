@@ -137,20 +137,29 @@ class ColorMode {
 /**
  * Data API implementation
  * ====================================================
+ * Toggle clicks are delegated on `document`, so switcher buttons added after
+ * load work and the listener survives Turbo's <body> swaps. The class is
+ * stateless — everything lives in localStorage and the DOM.
  */
+
+document.addEventListener('click', event => {
+  const target = event.target
+
+  if (!(target instanceof Element)) {
+    return
+  }
+
+  const toggle = target.closest(SELECTOR_TOGGLE)
+  const theme = toggle?.getAttribute('data-bs-theme-value') as Theme | null
+
+  if (theme) {
+    new ColorMode().setTheme(theme)
+  }
+})
 
 onDOMContentLoaded(() => {
   const colorMode = new ColorMode()
   colorMode.init()
-
-  document.querySelectorAll(SELECTOR_TOGGLE).forEach(toggle => {
-    toggle.addEventListener('click', () => {
-      const theme = toggle.getAttribute('data-bs-theme-value') as Theme | null
-      if (theme) {
-        colorMode.setTheme(theme)
-      }
-    })
-  })
 
   // Follow the OS while no explicit choice (or "auto") is stored.
   globalThis.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {

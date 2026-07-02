@@ -109,7 +109,7 @@ const safePropertyAccess = (obj: Record<string, unknown>, property: string): unk
  * the previous animation's steps: without this, rapidly toggling a treeview or
  * card leaves a stale cleanup timer that strips height/transition mid-animation
  * and desyncs the element's display state from its component's classes. */
-const slideTimers = new WeakMap<HTMLElement, number[]>()
+const slideTimers = new WeakMap<HTMLElement, Array<ReturnType<typeof globalThis.setTimeout>>>()
 
 const cancelSlide = (target: HTMLElement): void => {
   const timers = slideTimers.get(target) ?? []

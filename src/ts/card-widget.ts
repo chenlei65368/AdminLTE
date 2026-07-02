@@ -6,8 +6,8 @@
  * --------------------------------------------
  */
 
+import { BaseComponent, dispatchCustomEvent } from './base-component'
 import {
-  onDOMContentLoaded,
   slideUp,
   slideDown
 } from './util/index'
@@ -17,11 +17,18 @@ import {
  * ====================================================
  */
 
-const DATA_KEY = 'lte.card-widget'
-const EVENT_KEY = `.${DATA_KEY}`
+const NAME = 'card-widget'
+const EVENT_KEY = `.lte.${NAME}`
+
+// Cancelable "before" events, dispatched on the card when an action starts.
+const EVENT_COLLAPSE = `collapse${EVENT_KEY}`
+const EVENT_EXPAND = `expand${EVENT_KEY}`
+const EVENT_REMOVE = `remove${EVENT_KEY}`
+
+// "After" events, dispatched on the card when the action has completed.
 const EVENT_COLLAPSED = `collapsed${EVENT_KEY}`
 const EVENT_EXPANDED = `expanded${EVENT_KEY}`
-const EVENT_REMOVE = `remove${EVENT_KEY}`
+const EVENT_REMOVED = `removed${EVENT_KEY}`
 const EVENT_MAXIMIZED = `maximized${EVENT_KEY}`
 const EVENT_MINIMIZED = `minimized${EVENT_KEY}`
 
@@ -53,14 +60,24 @@ const Default: Config = {
   maximizeTrigger: SELECTOR_DATA_MAXIMIZE
 }
 
-class CardWidget {
-  _element: HTMLElement
+class CardWidget extends BaseComponent {
+  static get NAME(): string {
+    return NAME
+  }
+
+  static getInstance(element: Element | null | undefined): CardWidget | null {
+    return this._getInstance(element) as CardWidget | null
+  }
+
+  static getOrCreateInstance(element: HTMLElement, config: Partial<Config> = {}): CardWidget {
+    return this.getInstance(element) ?? new this(element, config)
+  }
+
   _parent: HTMLElement | undefined
-  _clone: HTMLElement | undefined
   _config: Config
 
-  constructor(element: HTMLElement, config: Config) {
-    this._element = element
+  constructor(element: HTMLElement, config: Partial<Config> = {}) {
+    super(element)
     this._parent = element.closest(SELECTOR_CARD) as HTMLElement | undefined
 
     if (element.classList.contains(CLASS_NAME_CARD)) {
@@ -71,76 +88,87 @@ class CardWidget {
   }
 
   collapse() {
-    const event = new Event(EVENT_COLLAPSED)
-
-    if (this._parent) {
-      this._parent.classList.add(CLASS_NAME_COLLAPSING)
-      this._parent.classList.remove(CLASS_NAME_EXPANDING)
-
-      // Only target direct children to avoid affecting nested cards
-      const elm = this._parent?.querySelectorAll(`:scope > ${SELECTOR_CARD_BODY}, :scope > ${SELECTOR_CARD_FOOTER}`)
-
-      elm.forEach(el => {
-        if (el instanceof HTMLElement) {
-          slideUp(el, this._config.animationSpeed)
-        }
-      })
-
-      setTimeout(() => {
-        // Guard against a stale timer: if expand() ran while this collapse
-        // was still animating, the card must not end up marked collapsed.
-        if (this._parent?.classList.contains(CLASS_NAME_COLLAPSING)) {
-          this._parent.classList.add(CLASS_NAME_COLLAPSED)
-          this._parent.classList.remove(CLASS_NAME_COLLAPSING)
-        }
-      }, this._config.animationSpeed)
+    if (!this._parent) {
+      return
     }
 
-    this._element?.dispatchEvent(event)
+    if (dispatchCustomEvent(this._parent, EVENT_COLLAPSE, { cancelable: true }).defaultPrevented) {
+      return
+    }
+
+    this._parent.classList.add(CLASS_NAME_COLLAPSING)
+    this._parent.classList.remove(CLASS_NAME_EXPANDING)
+
+    // Only target direct children to avoid affecting nested cards
+    const elm = this._parent.querySelectorAll(`:scope > ${SELECTOR_CARD_BODY}, :scope > ${SELECTOR_CARD_FOOTER}`)
+
+    elm.forEach(el => {
+      if (el instanceof HTMLElement) {
+        slideUp(el, this._config.animationSpeed)
+      }
+    })
+
+    setTimeout(() => {
+      // Guard against a stale timer: if expand() ran while this collapse
+      // was still animating, the card must not end up marked collapsed.
+      if (this._parent?.classList.contains(CLASS_NAME_COLLAPSING)) {
+        this._parent.classList.add(CLASS_NAME_COLLAPSED)
+        this._parent.classList.remove(CLASS_NAME_COLLAPSING)
+        dispatchCustomEvent(this._parent, EVENT_COLLAPSED)
+      }
+    }, this._config.animationSpeed)
   }
 
   expand() {
-    const event = new Event(EVENT_EXPANDED)
-
-    if (this._parent) {
-      this._parent.classList.add(CLASS_NAME_EXPANDING)
-      this._parent.classList.remove(CLASS_NAME_COLLAPSING, CLASS_NAME_COLLAPSED)
-
-      // Only target direct children to avoid affecting nested cards
-      const elm = this._parent?.querySelectorAll(`:scope > ${SELECTOR_CARD_BODY}, :scope > ${SELECTOR_CARD_FOOTER}`)
-
-      elm.forEach(el => {
-        if (el instanceof HTMLElement) {
-          slideDown(el, this._config.animationSpeed)
-        }
-      })
-
-      setTimeout(() => {
-        // Same stale-timer guard as collapse(), in the other direction.
-        if (this._parent?.classList.contains(CLASS_NAME_EXPANDING)) {
-          this._parent.classList.remove(CLASS_NAME_EXPANDING)
-        }
-      }, this._config.animationSpeed)
+    if (!this._parent) {
+      return
     }
 
-    this._element?.dispatchEvent(event)
+    if (dispatchCustomEvent(this._parent, EVENT_EXPAND, { cancelable: true }).defaultPrevented) {
+      return
+    }
+
+    this._parent.classList.add(CLASS_NAME_EXPANDING)
+    this._parent.classList.remove(CLASS_NAME_COLLAPSING, CLASS_NAME_COLLAPSED)
+
+    // Only target direct children to avoid affecting nested cards
+    const elm = this._parent.querySelectorAll(`:scope > ${SELECTOR_CARD_BODY}, :scope > ${SELECTOR_CARD_FOOTER}`)
+
+    elm.forEach(el => {
+      if (el instanceof HTMLElement) {
+        slideDown(el, this._config.animationSpeed)
+      }
+    })
+
+    setTimeout(() => {
+      // Same stale-timer guard as collapse(), in the other direction.
+      if (this._parent?.classList.contains(CLASS_NAME_EXPANDING)) {
+        this._parent.classList.remove(CLASS_NAME_EXPANDING)
+        dispatchCustomEvent(this._parent, EVENT_EXPANDED)
+      }
+    }, this._config.animationSpeed)
   }
 
   remove() {
-    const event = new Event(EVENT_REMOVE)
-
-    if (this._parent) {
-      const parent = this._parent
-      slideUp(parent, this._config.animationSpeed)
-
-      // Actually remove the card once the animation finishes — hiding it
-      // would keep its form fields submitting and its ids in the document.
-      setTimeout(() => {
-        parent.remove()
-      }, this._config.animationSpeed)
+    if (!this._parent) {
+      return
     }
 
-    this._element?.dispatchEvent(event)
+    if (dispatchCustomEvent(this._parent, EVENT_REMOVE, { cancelable: true }).defaultPrevented) {
+      return
+    }
+
+    const parent = this._parent
+    slideUp(parent, this._config.animationSpeed)
+
+    // Actually remove the card once the animation finishes — hiding it
+    // would keep its form fields submitting and its ids in the document.
+    // `removed` is dispatched just before detachment so it can still bubble.
+    setTimeout(() => {
+      dispatchCustomEvent(parent, EVENT_REMOVED)
+      parent.remove()
+      this.dispose()
+    }, this._config.animationSpeed)
   }
 
   toggle() {
@@ -155,8 +183,6 @@ class CardWidget {
   }
 
   maximize() {
-    const event = new Event(EVENT_MAXIMIZED)
-
     if (this._parent) {
       this._parent.style.height = `${this._parent.offsetHeight}px`
       this._parent.style.width = `${this._parent.offsetWidth}px`
@@ -175,16 +201,14 @@ class CardWidget {
           if (this._parent.classList.contains(CLASS_NAME_COLLAPSED)) {
             this._parent.classList.add(CLASS_NAME_WAS_COLLAPSED)
           }
+
+          dispatchCustomEvent(this._parent, EVENT_MAXIMIZED)
         }
       }, 150)
     }
-
-    this._element?.dispatchEvent(event)
   }
 
   minimize() {
-    const event = new Event(EVENT_MINIMIZED)
-
     if (this._parent) {
       this._parent.style.height = 'auto'
       this._parent.style.width = 'auto'
@@ -204,6 +228,8 @@ class CardWidget {
             this._parent.classList.remove(CLASS_NAME_WAS_COLLAPSED)
           }
 
+          dispatchCustomEvent(this._parent, EVENT_MINIMIZED)
+
           // Drop the inline sizing/transition once the restore transition has
           // finished so the card doesn't carry stale styles forever.
           setTimeout(() => {
@@ -214,8 +240,6 @@ class CardWidget {
         }
       }, 10)
     }
-
-    this._element?.dispatchEvent(event)
   }
 
   toggleMaximize() {
@@ -232,44 +256,44 @@ class CardWidget {
  *
  * Data Api implementation
  * ====================================================
+ * A single delegated listener on `document` handles all card toggles — so
+ * cards inserted later (AJAX, Turbo Frames) work without re-initialisation,
+ * and the listener itself survives Turbo's <body> swaps.
  */
 
-onDOMContentLoaded(() => {
-  const collapseBtn = document.querySelectorAll(SELECTOR_DATA_COLLAPSE)
+document.addEventListener('click', event => {
+  const target = event.target
 
-  // Use currentTarget (the [data-lte-toggle] button itself), not target:
-  // clicking the <i> icon inside the button would otherwise make the widget's
-  // events fire on the icon instead of the button.
-  collapseBtn.forEach(btn => {
-    btn.addEventListener('click', event => {
-      event.preventDefault()
-      const target = event.currentTarget as HTMLElement
-      const data = new CardWidget(target, Default)
-      data.toggle()
-    })
-  })
+  if (!(target instanceof Element)) {
+    return
+  }
 
-  const removeBtn = document.querySelectorAll(SELECTOR_DATA_REMOVE)
+  const collapseTrigger = target.closest(SELECTOR_DATA_COLLAPSE)
+  const removeTrigger = target.closest(SELECTOR_DATA_REMOVE)
+  const maximizeTrigger = target.closest(SELECTOR_DATA_MAXIMIZE)
+  const trigger = collapseTrigger ?? removeTrigger ?? maximizeTrigger
 
-  removeBtn.forEach(btn => {
-    btn.addEventListener('click', event => {
-      event.preventDefault()
-      const target = event.currentTarget as HTMLElement
-      const data = new CardWidget(target, Default)
-      data.remove()
-    })
-  })
+  if (!trigger) {
+    return
+  }
 
-  const maxBtn = document.querySelectorAll(SELECTOR_DATA_MAXIMIZE)
+  event.preventDefault()
 
-  maxBtn.forEach(btn => {
-    btn.addEventListener('click', event => {
-      event.preventDefault()
-      const target = event.currentTarget as HTMLElement
-      const data = new CardWidget(target, Default)
-      data.toggleMaximize()
-    })
-  })
+  const card = trigger.closest(SELECTOR_CARD) as HTMLElement | null
+
+  if (!card) {
+    return
+  }
+
+  const widget = CardWidget.getOrCreateInstance(card)
+
+  if (collapseTrigger) {
+    widget.toggle()
+  } else if (removeTrigger) {
+    widget.remove()
+  } else {
+    widget.toggleMaximize()
+  }
 })
 
 export default CardWidget

@@ -6,6 +6,7 @@
  * --------------------------------------------
  */
 
+import { BaseComponent, dispatchCustomEvent } from './base-component'
 import {
   getLifecycleSignal,
   onDOMContentLoaded
@@ -15,8 +16,8 @@ import {
  * Constants
  * ============================================================================
  */
-const DATA_KEY = 'lte.fullscreen'
-const EVENT_KEY = `.${DATA_KEY}`
+const NAME = 'fullscreen'
+const EVENT_KEY = `.lte.${NAME}`
 const EVENT_MAXIMIZED = `maximized${EVENT_KEY}`
 const EVENT_MINIMIZED = `minimized${EVENT_KEY}`
 
@@ -48,7 +49,7 @@ function syncFullScreenState(): void {
   const eventName = isFullScreen ? EVENT_MAXIMIZED : EVENT_MINIMIZED
 
   document.querySelectorAll(SELECTOR_FULLSCREEN_TOGGLE).forEach(button => {
-    button.dispatchEvent(new Event(eventName))
+    dispatchCustomEvent(button, eventName)
   })
 }
 
@@ -56,13 +57,17 @@ function syncFullScreenState(): void {
  * Class Definition.
  * ============================================================================
  */
-class FullScreen {
-  _element: HTMLElement
-  _config: undefined
+class FullScreen extends BaseComponent {
+  static get NAME(): string {
+    return NAME
+  }
 
-  constructor(element: HTMLElement, config?: undefined) {
-    this._element = element
-    this._config = config
+  static getInstance(element: Element | null | undefined): FullScreen | null {
+    return this._getInstance(element) as FullScreen | null
+  }
+
+  static getOrCreateInstance(element: HTMLElement): FullScreen {
+    return this.getInstance(element) ?? new this(element)
   }
 
   inFullScreen(): void {
@@ -96,25 +101,29 @@ class FullScreen {
 /**
  * Data Api implementation
  * ============================================================================
+ * Toggle clicks are delegated on `document`; the fullscreenchange listener is
+ * re-registered per page load with the lifecycle signal.
  */
+
+document.addEventListener('click', event => {
+  const target = event.target
+
+  if (!(target instanceof Element)) {
+    return
+  }
+
+  const button = target.closest(SELECTOR_FULLSCREEN_TOGGLE) as HTMLElement | null
+
+  if (!button) {
+    return
+  }
+
+  event.preventDefault()
+  FullScreen.getOrCreateInstance(button).toggleFullScreen()
+})
+
 onDOMContentLoaded(() => {
   document.addEventListener('fullscreenchange', syncFullScreenState, { signal: getLifecycleSignal() })
-
-  const buttons = document.querySelectorAll(SELECTOR_FULLSCREEN_TOGGLE)
-
-  buttons.forEach(btn => {
-    btn.addEventListener('click', event => {
-      event.preventDefault()
-
-      const target = event.target as HTMLElement
-      const button = target.closest(SELECTOR_FULLSCREEN_TOGGLE) as HTMLElement | undefined
-
-      if (button) {
-        const data = new FullScreen(button, undefined)
-        data.toggleFullScreen()
-      }
-    })
-  })
 })
 
 export default FullScreen
