@@ -104,10 +104,35 @@ const safePropertyAccess = (obj: Record<string, unknown>, property: string): unk
   }
 }
 
+/* SLIDE ANIMATION BOOKKEEPING
+ * Pending timers are tracked per element so that starting a new slide cancels
+ * the previous animation's steps: without this, rapidly toggling a treeview or
+ * card leaves a stale cleanup timer that strips height/transition mid-animation
+ * and desyncs the element's display state from its component's classes. */
+const slideTimers = new WeakMap<HTMLElement, number[]>()
+
+const cancelSlide = (target: HTMLElement): void => {
+  const timers = slideTimers.get(target) ?? []
+  for (const timer of timers) {
+    globalThis.clearTimeout(timer)
+  }
+
+  slideTimers.delete(target)
+}
+
+const clearSlideStyles = (target: HTMLElement): void => {
+  for (const property of ['height', 'padding-top', 'padding-bottom', 'margin-top', 'margin-bottom', 'overflow', 'transition-duration', 'transition-property']) {
+    target.style.removeProperty(property)
+  }
+}
+
 /* SLIDE UP */
 const slideUp = (target: HTMLElement, duration = 500) => {
+  cancelSlide(target)
+
   if (duration <= 1) {
     target.style.display = 'none'
+    clearSlideStyles(target)
     return
   }
 
@@ -117,7 +142,7 @@ const slideUp = (target: HTMLElement, duration = 500) => {
   target.style.height = `${target.offsetHeight}px`
   target.style.overflow = 'hidden'
 
-  globalThis.setTimeout(() => {
+  const stepTimer = globalThis.setTimeout(() => {
     target.style.height = '0'
     target.style.paddingTop = '0'
     target.style.paddingBottom = '0'
@@ -125,21 +150,22 @@ const slideUp = (target: HTMLElement, duration = 500) => {
     target.style.marginBottom = '0'
   }, 1)
 
-  globalThis.setTimeout(() => {
+  const cleanupTimer = globalThis.setTimeout(() => {
     target.style.display = 'none'
-    target.style.removeProperty('height')
-    target.style.removeProperty('padding-top')
-    target.style.removeProperty('padding-bottom')
-    target.style.removeProperty('margin-top')
-    target.style.removeProperty('margin-bottom')
-    target.style.removeProperty('overflow')
-    target.style.removeProperty('transition-duration')
-    target.style.removeProperty('transition-property')
+    clearSlideStyles(target)
+    slideTimers.delete(target)
   }, duration)
+
+  slideTimers.set(target, [stepTimer, cleanupTimer])
 }
 
 /* SLIDE DOWN */
 const slideDown = (target: HTMLElement, duration = 500) => {
+  cancelSlide(target)
+  // Drop inline styles a cancelled slideUp may have left behind (height: 0,
+  // overflow: hidden, …) before measuring, or the natural height reads as 0.
+  clearSlideStyles(target)
+
   target.style.removeProperty('display')
   let { display } = globalThis.getComputedStyle(target)
 
@@ -161,7 +187,7 @@ const slideDown = (target: HTMLElement, duration = 500) => {
   target.style.marginTop = '0'
   target.style.marginBottom = '0'
 
-  globalThis.setTimeout(() => {
+  const stepTimer = globalThis.setTimeout(() => {
     target.style.boxSizing = 'border-box'
     target.style.transitionProperty = 'height, margin, padding'
     target.style.transitionDuration = `${duration}ms`
@@ -172,12 +198,12 @@ const slideDown = (target: HTMLElement, duration = 500) => {
     target.style.removeProperty('margin-bottom')
   }, 1)
 
-  globalThis.setTimeout(() => {
-    target.style.removeProperty('height')
-    target.style.removeProperty('overflow')
-    target.style.removeProperty('transition-duration')
-    target.style.removeProperty('transition-property')
+  const cleanupTimer = globalThis.setTimeout(() => {
+    clearSlideStyles(target)
+    slideTimers.delete(target)
   }, duration)
+
+  slideTimers.set(target, [stepTimer, cleanupTimer])
 }
 
 /* TOGGLE */
