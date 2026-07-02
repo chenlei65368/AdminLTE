@@ -64,18 +64,34 @@ export class AccessibilityManager {
   private createLiveRegion(): void {
     if (this.liveRegion) return
 
+    // Adopt an existing region instead of appending a duplicate: Turbo caches
+    // the <body> including JS-injected nodes, so a region created before a
+    // navigation is restored along with the snapshot.
+    const existingRegion = document.getElementById('live-region')
+    if (existingRegion) {
+      this.liveRegion = existingRegion
+      return
+    }
+
     this.liveRegion = document.createElement('div')
     this.liveRegion.id = 'live-region'
     this.liveRegion.className = 'live-region'
     this.liveRegion.setAttribute('aria-live', 'polite')
     this.liveRegion.setAttribute('aria-atomic', 'true')
     this.liveRegion.setAttribute('role', 'status')
-    
+
     document.body.append(this.liveRegion)
   }
 
   // WCAG 2.4.1: Bypass Blocks
   private addSkipLinks(): void {
+    // Same Turbo snapshot concern as createLiveRegion: skip links restored
+    // with a cached <body> must not be injected a second time.
+    if (document.querySelector('.skip-links')) {
+      this.ensureSkipTargets()
+      return
+    }
+
     const skipLinksContainer = document.createElement('div')
     skipLinksContainer.className = 'skip-links'
     
@@ -118,10 +134,12 @@ export class AccessibilityManager {
 
   // WCAG 2.4.3: Focus Order & 2.4.7: Focus Visible
   private initFocusManagement(): void {
+    // Note: focus must never be wrapped at the document edges — trapping Tab
+    // inside the page prevents keyboard users from reaching browser chrome
+    // and is itself a WCAG 2.1.2 (No Keyboard Trap) failure. Focus trapping
+    // is only legitimate inside active modal dialogs, which Bootstrap already
+    // handles.
     document.addEventListener('keydown', (event) => {
-      if (event.key === 'Tab') {
-        this.handleTabNavigation(event)
-      }
       if (event.key === 'Escape') {
         this.handleEscapeKey(event)
       }
@@ -130,37 +148,6 @@ export class AccessibilityManager {
     // Focus management for modals and dropdowns
     this.initModalFocusManagement()
     this.initDropdownFocusManagement()
-  }
-
-  private handleTabNavigation(event: KeyboardEvent): void {
-    const focusableElements = this.getFocusableElements()
-    const currentIndex = focusableElements.indexOf(document.activeElement as HTMLElement)
-    
-    if (event.shiftKey) {
-      // Shift+Tab (backward)
-      if (currentIndex <= 0) {
-        event.preventDefault()
-        focusableElements.at(-1)?.focus()
-      }
-    } else if (currentIndex >= focusableElements.length - 1) {
-      // Tab (forward)
-      event.preventDefault()
-      focusableElements[0]?.focus()
-    }
-  }
-
-  private getFocusableElements(): HTMLElement[] {
-    const selector = [
-      'a[href]',
-      'button:not([disabled])',
-      'input:not([disabled])',
-      'select:not([disabled])',
-      'textarea:not([disabled])',
-      '[tabindex]:not([tabindex="-1"])',
-      '[contenteditable="true"]'
-    ].join(', ')
-
-    return Array.from(document.querySelectorAll(selector)) as HTMLElement[]
   }
 
   private handleEscapeKey(event: KeyboardEvent): void {
@@ -186,12 +173,18 @@ export class AccessibilityManager {
     // Add keyboard support for custom components
     document.addEventListener('keydown', (event) => {
       const target = event.target as HTMLElement
-      
+
+      // Never intercept keys inside editable controls: arrow keys must keep
+      // moving the caret in e.g. a navbar search input.
+      if (target.matches('input, textarea, select, [contenteditable], [contenteditable] *')) {
+        return
+      }
+
       // Handle arrow key navigation for menus
       if (target.closest('.nav, .navbar-nav, .dropdown-menu')) {
         this.handleMenuNavigation(event)
       }
-      
+
       // Handle Enter and Space for custom buttons
       if ((event.key === 'Enter' || event.key === ' ') && target.hasAttribute('role') && target.getAttribute('role') === 'button' && !target.matches('button, input[type="button"], input[type="submit"]')) {
         event.preventDefault()
@@ -206,9 +199,18 @@ export class AccessibilityManager {
     }
 
     const currentElement = event.target as HTMLElement
-    const menuItems = Array.from(currentElement.closest('.nav, .navbar-nav, .dropdown-menu')?.querySelectorAll('a, button') || []) as HTMLElement[]
+    const menuItems = (Array.from(currentElement.closest('.nav, .navbar-nav, .dropdown-menu')?.querySelectorAll('a, button') || []) as HTMLElement[])
+      // Skip items hidden inside collapsed submenus or closed dropdowns.
+      .filter(item => item.offsetParent !== null)
     const currentIndex = menuItems.indexOf(currentElement)
-    
+
+    // Only take over navigation when focus is actually on a menu item;
+    // otherwise stealing the arrow keys would yank focus out of unrelated
+    // controls that merely sit inside a nav container.
+    if (currentIndex === -1) {
+      return
+    }
+
     let nextIndex: number
     
     switch (event.key) {
@@ -390,7 +392,14 @@ export class AccessibilityManager {
     }
     
     errorElement.textContent = input.validationMessage
-    input.setAttribute('aria-describedby', errorId)
+    // Append to any existing aria-describedby (e.g. help text) instead of
+    // clobbering it.
+    const describedBy = (input.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean)
+    if (!describedBy.includes(errorId)) {
+      describedBy.push(errorId)
+    }
+
+    input.setAttribute('aria-describedby', describedBy.join(' '))
     input.classList.add('is-invalid')
     
     this.announce(`Error in ${input.labels?.[0]?.textContent || input.name}: ${input.validationMessage}`, 'assertive')
@@ -398,22 +407,30 @@ export class AccessibilityManager {
 
   // Modal focus management
   private initModalFocusManagement(): void {
-    document.addEventListener('shown.bs.modal', (event) => {
-      const modal = event.target as HTMLElement
-      const focusableElements = modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
-      
-      if (focusableElements.length > 0) {
-        (focusableElements[0] as HTMLElement).focus()
-      }
-      
-      // Store previous focus
+    // Capture the trigger on `show` — before Bootstrap (or the `shown`
+    // handler below) moves focus into the modal. Capturing on `shown` would
+    // store an element inside the modal itself, so closing it would "restore"
+    // focus to a now-hidden node and drop focus to <body>.
+    document.addEventListener('show.bs.modal', () => {
       this.focusHistory.push(document.activeElement as HTMLElement)
     }, { signal: this.signal })
 
+    document.addEventListener('shown.bs.modal', (event) => {
+      const modal = event.target as HTMLElement
+      // Respect an explicit [autofocus] before falling back to the first
+      // focusable control.
+      const autofocusElement = modal.querySelector('[autofocus]') as HTMLElement | null
+      const firstFocusable = autofocusElement ||
+        (modal.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])') as HTMLElement | null)
+
+      firstFocusable?.focus()
+    }, { signal: this.signal })
+
     document.addEventListener('hidden.bs.modal', () => {
-      // Restore previous focus
+      // Restore previous focus, unless the trigger has since been removed
+      // from the document (e.g. a delete-confirmation modal removing its row).
       const previousElement = this.focusHistory.pop()
-      if (previousElement) {
+      if (previousElement?.isConnected) {
         previousElement.focus()
       }
     }, { signal: this.signal })
@@ -482,7 +499,7 @@ export class AccessibilityManager {
           event.preventDefault()
         }
       }
-    })
+    }, { signal: this.signal })
   }
 
   public addLandmarks(): void {
@@ -492,7 +509,9 @@ export class AccessibilityManager {
       const appMain = document.querySelector('.app-main')
       if (appMain) {
         appMain.setAttribute('role', 'main')
-        appMain.id = 'main'
+        if (!appMain.id) {
+          appMain.id = 'main'
+        }
       }
     }
 
@@ -527,10 +546,29 @@ export const initAccessibility = (config?: Partial<AccessibilityConfig>): Access
   return new AccessibilityManager(config)
 }
 
+// Parse a CSS color into RGB channels. Supports rgb()/rgba() strings and
+// 3- or 6-digit hex notation; anything else falls back to black.
+const parseColorChannels = (color: string): number[] => {
+  const hexMatch = /^#([\da-f]{3}|[\da-f]{6})$/i.exec(color.trim())
+  if (hexMatch) {
+    let hex = hexMatch[1]
+    if (hex.length === 3) {
+      hex = [...hex].map(character => character + character).join('')
+    }
+
+    return [
+      Number.parseInt(hex.slice(0, 2), 16),
+      Number.parseInt(hex.slice(2, 4), 16),
+      Number.parseInt(hex.slice(4, 6), 16)
+    ]
+  }
+
+  return color.match(/\d+/g)?.map(Number) || [0, 0, 0]
+}
+
 // Utility function for luminance calculation
 const getLuminance = (color: string): number => {
-  const rgb = color.match(/\d+/g)?.map(Number) || [0, 0, 0]
-  const [r, g, b] = rgb.map(c => {
+  const [r, g, b] = parseColorChannels(color).map(c => {
     c = c / 255
     return c <= 0.039_28 ? c / 12.92 : (c + 0.055) ** 2.4 / (1.055 ** 2.4)
   })
