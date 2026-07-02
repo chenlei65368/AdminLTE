@@ -18,7 +18,7 @@ Configure the sidebar via data attributes on the `.app-sidebar` element:
 
 | Attribute | Default | Description |
 |-----------|---------|-------------|
-| `data-sidebar-breakpoint` | `992` | Screen width (px) below which the sidebar is considered mobile. |
+| `data-sidebar-breakpoint` | `991.98` | Screen width (px) below which the sidebar is considered mobile. |
 | `data-enable-persistence` | `false` | Save sidebar state to localStorage across page loads. |
 
 ```html
@@ -65,7 +65,7 @@ Import the class and instantiate it on any element (typically the sidebar toggle
 import { PushMenu } from "admin-lte"
 
 const sidebar = new PushMenu(document.querySelector('[data-lte-toggle="sidebar"]'), {
-  sidebarBreakpoint: 992,
+  sidebarBreakpoint: 991.98,
   enablePersistence: false
 })
 ```
