@@ -77,5 +77,6 @@
 // AdminLTE Accessibility Styles - WCAG 2.1 AA Compliance
 @import "accessibility";
 
-// AdminLTE Documentation Styles (only applies to pages with body.docs-page)
-@import "docs";
+// Documentation styles live in their own bundle (adminlte-docs.scss) so
+// applications don't ship them — the docs pages load it in addition to
+// this file.

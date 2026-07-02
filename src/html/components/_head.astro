@@ -4,6 +4,8 @@ const cssPath = isRtl ? ".rtl" : "";
 
 // Smart path resolution: calculate relative path based on directory depth
 const pathname = Astro.url.pathname;
+// Docs/FAQ pages load the docs-only stylesheet on top of adminlte.css.
+const isDocsPage = pathname.includes("/docs/");
 // Only count directories, not the filename itself
 const pathSegments = pathname.split('/').filter(segment => segment !== '');
 const depth = pathSegments.length > 0 ? pathSegments.length - 1 : 0;
@@ -97,3 +99,6 @@ const deploymentPath = depth === 0 ? './' : '../'.repeat(depth);
 <!--begin::Required Plugin(AdminLTE)-->
 <link rel="stylesheet" href={deploymentPath + "css/adminlte" + cssPath + ".css"} />
 <!--end::Required Plugin(AdminLTE)-->
+{isDocsPage && (
+  <link rel="stylesheet" href={deploymentPath + "css/adminlte-docs" + cssPath + ".css"} />
+)}
